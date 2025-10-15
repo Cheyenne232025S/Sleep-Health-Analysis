@@ -1,0 +1,362 @@
+---
+title: "Sleep and Health analysis"
+format:
+  html:
+    self-contained: true   # bundles all assets into the html
+editor: visual
+author: Cheyenne Erickson
+---
+
+# Data Exploration Project on Sleep and Health Statistics
+
+```{r, message = FALSE, warning = FALSE}
+library(dplyr)
+library(ggcorrplot)
+library(ggplot2)
+library(ggpubr)
+library(corrplot)
+library(reticulate)
+```
+
+Reading Health and Sleep data 2024 from kaggle.com\
+Owner : Orvile\
+Funding: University of Oxford
+
+```{r}
+my_data <- read.csv("C:/Users/Cheye/OneDrive/Documents/Personal Data Projects/Health and Sleep relation/Sleep_health_and_lifestyle_dataset.csv")
+#print(my_data)
+```
+
+## Correlation Heat Map
+
+```{r}
+#collect numerical data
+numeric_data <- my_data %>%
+  select(Age, Sleep.Duration, Quality.of.Sleep, Physical.Activity.Level,
+         Stress.Level, Heart.Rate, Daily.Steps)
+
+#calculate correlation matrix
+cor_matrix <- cor(numeric_data, use = "complete.obs")
+## "complete.obs" makes it so only rows with no missing values are used.
+
+#make map
+ggcorrplot(cor_matrix, 
+           method = "circle", 
+           type = "lower", 
+           lab = TRUE,
+           lab_size = 3,
+           colors = c("light green", "gray", "light blue"),
+           title = "Correlation Heatmap of Sleep & Health Variables",
+           ggtheme = theme_minimal() +
+             theme(
+               plot.title = element_text(hjust = 0.5)
+             ))
+
+```
+
+# Observations from HeatMap
+
+## Strong Correlations (.7 - 1):
+
+-   Quality of Sleep and Sleep Duration : positive relationship
+
+-   Stress Level and Sleep Duration : negative relationship
+
+-   Stress level and Quality of sleep : negative relationship
+
+-   Daily Steps and Physical Activity level : positive relationship
+
+## Moderate Correlations (.4 - .69):
+
+-   Quality of Sleep and Age : Positive relationship
+
+-   Stress Level and Age : negative relationship
+
+# Bar graph showing Stress Level and Occupation
+
+```{r}
+# data set with only Stress Level and Occupation columns 
+stress_occupation_data <- my_data%>%
+  select(Stress.Level, Occupation)
+#print(stress_occupation_data)
+
+
+# data set grouped by occupation and average and sum statistics
+stress_stats <- stress_occupation_data %>%
+  group_by(Occupation) %>%
+  summarise(Avg_Stress_Level = mean(Stress.Level, na.rm = TRUE),
+            Sum_Stress_Level = sum(Stress.Level, na.rm = TRUE))
+
+#print(stress_stats)
+
+```
+
+```{r}
+#bar graph creation
+ggplot(stress_stats, aes(x = Occupation, y = Avg_Stress_Level, fill = Occupation)) +
+  geom_bar(stat = "identity") +
+  theme_minimal() +
+  labs(
+    title = "Average Stress Level by Occupation",
+    x = "Occupation",
+    y = "Average Stress Level"
+  ) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 11, face = "bold"),
+    axis.text.y = element_text(size = 11, face = "bold"),
+    axis.title.x = element_text(margin = margin(t = 16), face = "bold", size = 12),
+    axis.title.y = element_text(margin = margin(r = 15), face = "bold", size = 12),
+    plot.title = element_text(size = 12, face = "bold", hjust = 0.5, margin = margin(b = 10)),
+    legend.position = "none"
+    ) +
+  scale_fill_brewer(palette = "Set3")
+
+
+```
+
+# Question:
+
+## Do people with sleep disorders (e.g., insomnia, apnea) have significantly higher stress levels?
+
+```{r}
+# make new column in data stating if instance has sleeping disorder
+grouped_data <- my_data %>%
+  mutate(Has_Disorder = ifelse(Sleep.Disorder == "None", "No", "Yes"))
+#print(grouped_data)
+
+# Make box plot to visualize 
+# ggplot(grouped_data, aes(x = Has_Disorder, y = Stress.Level, fill = Has_Disorder)) +
+#   geom_boxplot() +
+#   labs(title = "Stress Levels by Sleep Disorder Status", x = "Has Sleep Disorder", y = "Stress Level") +
+#   theme_minimal()
+
+ggplot(grouped_data, aes(x = Has_Disorder, y = Stress.Level, fill = Has_Disorder)) +
+  geom_boxplot(outlier.colour = "darkred", outlier.shape = 16, outlier.size = 2) +
+  labs(title = "Stress Levels by Sleep Disorder Status", x = "Has Sleep Disorder", y = "Stress Level") +
+  geom_jitter(width = 0.15, alpha = 0.4, color = "black") +
+  theme_minimal() +
+  theme(
+    axis.title.x = element_text(face = "bold", margin = margin(t = 10)),
+    axis.title.y = element_text(face = "bold", margin = margin( r= 10)),
+    plot.title = element_text(face = "bold", margin = margin(b=10))
+    
+  )
+```
+
+## First Observation:
+
+The distribution of stress level within those who have stress disorder have the median line at the top of the box plot, likely do to ties or skewed data.
+
+```{r}
+grouped_data %>%
+  group_by(Has_Disorder) %>%
+  summarise(
+    Min = min(Stress.Level),
+    Q1 = quantile(Stress.Level, 0.25),
+    Median = median(Stress.Level),
+    Q3 = quantile(Stress.Level, 0.75),
+    Max = max(Stress.Level),
+    Mean = mean(Stress.Level),
+    Count = n()
+  )
+
+```
+
+yes disorder: - Q2 and Q3 are the same hence the weird box. This shows that the data is skewed - 25% of people in this category had stress levels \< 4 - 50% and 75% of people in this category had stress levels \< 7 - median = 7, implying left-skewed data
+
+no disorder: - seems normally distributed at a glance - 25% of people in this category had stress levels \< 4 - 50% of people in this category had stress levels \< 5 - 75% of the people in this category had stress levels \< 6
+
+general: medians and distributions are noticeably different, but not variability
+
+# Testing if Data from Two Groups are Normal
+
+To determine the appropriate statistical test to answer the question, Do people with sleep disorders (e.g., insomnia, apnea) have significantly higher stress levels, I first want to check if the data from the two groups are Normal.
+
+## statistical check:
+
+```{r}
+# testing if the data is significantly different from normal data
+shapiro.test(grouped_data$Stress.Level[grouped_data$Has_Disorder == "No"])
+shapiro.test(grouped_data$Stress.Level[grouped_data$Has_Disorder == "Yes"])
+
+```
+
+The Shapiro Wilk test for both groups produced a p-value \< 0.5 so the hypothesis that the data are normal is rejected.
+
+## Visual Check:
+
+```{r}
+# Histogram
+ggplot(grouped_data, aes(x = Stress.Level, fill = Has_Disorder)) +
+  geom_histogram(binwidth = 1, position = "dodge", color = "black") +
+  facet_wrap(~Has_Disorder) +
+  theme_minimal()+
+  theme(
+    axis.text.x = element_text(face = "bold"),
+    axis.text.y = element_text(face = "bold"),
+    axis.title.x = element_text(margin = margin( t= 10)),
+    axis.title.y = element_text(margin = margin(r=10)),
+    strip.text = element_text(face = "bold")
+    )
+
+
+
+```
+
+No bell shaped curve, supporting earlier conclusion from Shapiro-Wilk normality test
+
+```{r}
+# Or Density plot
+ggplot(grouped_data, aes(x = Stress.Level, fill = Has_Disorder)) +
+  geom_density(alpha = 0.5) +
+  theme_minimal()
+
+```
+
+The Density plot reveals Same thing even clearer
+
+```{r}
+#QQ plot
+ggqqplot(grouped_data$Stress.Level[grouped_data$Has_Disorder == "No"], title = "QQ Plot - No Disorder")
+ggqqplot(grouped_data$Stress.Level[grouped_data$Has_Disorder == "Yes"], title = "QQ Plot - Has Disorder")
+
+
+```
+
+This diagram shows heavier tails than a normal distribution and many points outside of the 95% confidence interval band. At the low and high ends, the data points move away from the normal line, indicating peaked or heavy-tailed distribution similar to what the density plot shows.
+
+## Non-Parametric Testing
+
+Since the distributions of stress levels within those with and without sleep disorders are not normally distributed I will use Non-Parametric testing to answer the question.
+
+Use Wilcoxon Ranked-Sum test since we have two independent groups.
+
+```{r}
+wilcox.test(Stress.Level ~ Has_Disorder, data = grouped_data)
+
+```
+
+The test revealed a p-value \< .05 so we reject the hypothesis that the mean stress levels in both groups are the same
+
+A.K.A There is a significant difference in stress levels between those who have sleep disorders and those who do not.
+
+# Question:
+
+## Can I predict stress level based on physical activity, sleep duration, heart rate, age, quality of sleep, daily steps, occupation, and sleep disorder?
+
+```{r}
+# first, qualitative data must be transformed
+grouped_data$Occupation <- as.factor(grouped_data$Occupation)
+grouped_data$Has_Disorder <- as.factor(grouped_data$Has_Disorder)
+
+
+#regression model
+model <- lm(Stress.Level ~ Physical.Activity.Level + Sleep.Duration + Heart.Rate +
+              Age + Quality.of.Sleep + Daily.Steps + Occupation + Has_Disorder,
+            data = grouped_data)
+summary(model)
+plot(model)
+```
+
+## Model as Function
+
+```{r}
+# Get the coefficients
+coef_values <- coef(model)
+
+# Build equation as a string
+equation <- paste0(
+  "Stress.Level = ",
+  round(coef_values[1], 3), " + ",
+  paste(
+    paste0(round(coef_values[-1], 3), " * ", names(coef_values[-1])),
+    collapse = " + "
+  )
+)
+
+equation
+```
+
+## Summary Observations
+
+R-Squared value of 0.9415, meaning this model explains 94.15% of the variance in stress level. The P-value of \< 0.05 says that the model is statistically significant and not just noise. The predictors in the summary with \*\*\* are highly significant (p \<.001), \*\* is significant (p \< .01), and \* is somewhat significant (p \<.05). The first column of integers is the regression coefficient (how much stress level changes for 1 unit change in predictor variable), the second column is the standard error of the estimate, and the third column is the test statistic.
+
+The regression coefficient for Has_DisorderYes is negative which is not expected since earlier we discovered in the boxplot that those with sleeping disorders had higher stress levels, This could be from other variables suppressing Has_DisorderYes effect. Below I will check the correlation between Has_DisorderYes and other variables.
+
+```{r}
+# Convert Has_Disorder to numeric for correlation purposes
+grouped_data$Has_Disorder_Num <- ifelse(grouped_data$Has_Disorder == "Yes", 1, 0)
+
+cor_matrix <- cor(grouped_data[, c("Has_Disorder_Num", "Sleep.Duration", "Quality.of.Sleep", "Physical.Activity.Level", "Heart.Rate", "Age", "Daily.Steps")])
+corrplot(cor_matrix, method = "circle")
+
+```
+
+This correlation map shows that Has_Disorder has a negative relationship with sleep duration and quality of sleep, which are stronger predictors in the model. The unique part of Has_Disorder that is not explained by sleep or health appears to be slightly negative. I will keep Has_disorder in the model, while keeping this in mind.
+
+Now that the model is validated, I will create a stress predictor model using python.
+
+## Stress Predictor
+
+```{python}
+import pandas as pd
+from sklearn.linear_model import LinearRegression
+from sklearn.preprocessing import OneHotEncoder
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+
+
+grouped_data_py = r.grouped_data  # Access the R variable directly
+
+X = grouped_data_py[['Physical.Activity.Level', 'Sleep.Duration', 'Heart.Rate', 
+                     'Age', 'Quality.of.Sleep', 'Daily.Steps', 'Occupation', 'Has_Disorder']]
+y = grouped_data_py['Stress.Level']
+
+# Define preprocessing for categorical variables
+categorical_features = ['Occupation', 'Has_Disorder']
+categorical_transformer = OneHotEncoder(handle_unknown='ignore')
+
+# Combine preprocessing with model
+preprocessor = ColumnTransformer(
+    transformers=[
+        ('cat', categorical_transformer, categorical_features)
+    ],
+    remainder='passthrough'  # Keep other columns as they are
+)
+
+# Build pipeline
+model = Pipeline(steps=[
+    ('preprocessor', preprocessor),
+    ('regressor', LinearRegression())
+])
+
+# Fit the model
+model.fit(X, y)
+
+# ---- Predict from manual input ----
+# Example: You can replace these values 
+manual_input = pd.DataFrame([{
+    'Physical.Activity.Level': 5,
+    'Sleep.Duration': 7.5,
+    'Heart.Rate': 72,
+    'Age': 30,
+    'Quality.of.Sleep': 8,
+    'Daily.Steps': 8000,
+    'Occupation': 'Engineer',
+    'Has_Disorder': 'No'
+}])
+
+predicted_stress = model.predict(manual_input)
+print(f"Predicted Stress Level (manual input): {predicted_stress[0]:.2f}")
+
+# ---- Predict using existing dataset row ----
+row_index = 1  # Change this to test different rows
+existing_row = X.iloc[[row_index]]
+predicted_existing = model.predict(existing_row)
+print(f"Predicted Stress Level (row index {row_index}): {predicted_existing[0]:.2f}")
+
+```
+
+This python code can be used to predict stress levels based on user manual input for the predictor variables, or the code can be used to predict stress levels in the existing data set.
+
+After testing the later with a variety of rows, the model consistently predicts the correct whole number. Unfortunately, the data set does not go into the tenths decimal place for stress levels.
